@@ -1,6 +1,9 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::f64::consts::PI;
 
+mod frequencies;
+use frequencies::Note;
+
 struct SinWave {
     hz: f64,
     t: u64,
@@ -8,7 +11,7 @@ struct SinWave {
 
 impl SinWave {
     fn new(hz: f64) -> Self {
-        SinWave { hz: hz, t: 0 }
+        SinWave { hz, t: 0 }
     }
 }
 
@@ -22,16 +25,33 @@ impl Iterator for SinWave {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Hello world!");
-    let sin_wave = SinWave::new(440.0);
+struct CombinedWave {
+    waves: Vec<SinWave>,
+}
 
-    let mut sin_wave_iter = sin_wave.into_iter();
+impl Iterator for CombinedWave {
+    type Item = f64;
 
-    for _ in 1..100 {
-        let amplitude = sin_wave_iter.next().unwrap_or(0.0);
-        println!("{}", amplitude);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut amplitude = 0.0;
+        for wave in &mut self.waves {
+            let wave_iter = wave.into_iter();
+            amplitude += wave_iter.next().unwrap_or(0.0);
+        }
+        return Some(amplitude / self.waves.len() as f64);
     }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let sin_wave_a440 = SinWave::new(frequencies::frequency(Note::A4));
+    let sin_wave_e329 = SinWave::new(frequencies::frequency(Note::E4));
+    let sin_wave_cs277 = SinWave::new(frequencies::frequency(Note::Csharp4));
+
+    let combined_wave = CombinedWave {
+        waves: vec![sin_wave_a440, sin_wave_e329, sin_wave_cs277],
+    };
+
+    let mut combined_wave_iter = combined_wave.into_iter();
 
     let host = cpal::default_host();
     let device = host
@@ -46,14 +66,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = device.build_output_stream(
         &stream_config,
         move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            write_data(data, 2, &mut sin_wave_iter)
+            write_data(data, 2, &mut combined_wave_iter)
         },
         err_fn,
         None,
     )?;
     stream.play()?;
 
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    std::thread::sleep(std::time::Duration::from_millis(3000));
     Ok(())
 }
 
